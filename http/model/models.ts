@@ -1,5 +1,11 @@
 import mongoose from "mongoose";
-mongoose.connect(process.env.MONGO_URL!)
+import dotenv from "dotenv";
+dotenv.config();
+const MONGO_URL = process.env.MONGO_URL;
+if (!MONGO_URL) {
+  throw new Error("MONGO_URL is not defined");
+}
+mongoose.connect(MONGO_URL);
 const UserSchema = new mongoose.Schema({
     name: String,
     email: {type: String, unique:true},

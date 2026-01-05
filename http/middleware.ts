@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from "express";
-import jwt from "jsonwebtoken";
+import * as jwt from "jsonwebtoken";
+
 interface JwtPayload {
   userId: string;
   role: "teacher" | "student";
@@ -44,6 +45,20 @@ export const teacherAuthMiddleware = (
     res.status(403).json({
       success: false,
       error: "Forbidden, teacher access required",
+    });
+    return;
+  }
+  next();
+};
+export const studentAuthMiddleware = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  if (!req.role || req.role != "student") {
+    res.status(403).json({
+      success: false,
+      error: "Forbidden, student access required",
     });
     return;
   }
