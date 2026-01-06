@@ -12,14 +12,19 @@
   "type": "commonjs",
   "dependencies": {
     "@types/express": "^5.0.6",
+    "@types/express-ws": "^3.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/mongoose": "^5.11.96",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.3",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
+    "express-ws": "^5.0.2",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.1.1",
     "zod": "^4.3.5"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0"
   }
 }

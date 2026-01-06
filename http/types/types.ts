@@ -18,3 +18,7 @@ export const AddStudentSchema = z.object({
 export const AttendanceSchema = z.object({
   classId: z.string()
 })
+export interface JwtPayload {
+  userId: string;
+  role: "teacher" | "student";
+}

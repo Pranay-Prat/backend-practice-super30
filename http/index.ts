@@ -3,6 +3,7 @@ import {
   AddStudentSchema,
   AttendanceSchema,
   ClassSchema,
+  JwtPayload,
   SignInSchema,
   SignUpSchema,
 } from "./types/types";
@@ -16,6 +17,7 @@ import {
   teacherAuthMiddleware,
 } from "./middleware";
 import mongoose from "mongoose";
+import expressWs from "express-ws";
 import dotenv from "dotenv";
 dotenv.config();
 let activeSession: {
@@ -24,8 +26,199 @@ let activeSession: {
   attendance: Record<string, string>;
 } | null = null;
 const app = express();
+expressWs(app);
 app.use(express.json());
+let allWs: any[] = [];
+app.ws("/ws", function (ws, req) {
+  try {
+    const token = req.query.token;
 
+    const decoded = jwt.verify(token, process.env.JWT_PASSWORD!) as JwtPayload;
+    ws.user = { userId: decoded.userId, role: decoded.role };
+    allWs.push(ws);
+    ws.on("close", () => {
+      allWs = allWs.filter((x) => x !== ws);
+    });
+    ws.on("message", async function (msg) {
+      const message = msg.toString();
+      let parsedData;
+      try {
+        parsedData = JSON.parse(message);
+      } catch {
+        ws.send(
+          JSON.stringify({
+            event: "ERROR",
+            data: { message: "Invalid JSON format" },
+          })
+        );
+        return;
+      }
+      if (!activeSession) {
+        ws.send(
+          JSON.stringify({
+            event: "ERROR",
+            data: {
+              message: "No active attendance session",
+            },
+          })
+        );
+
+        return;
+      }
+      switch (parsedData.event) {
+        case "ATTENDANCE_MARKED":
+          if (ws.user.role === "teacher") {
+            activeSession.attendance[parsedData.data.studentId] =
+              parsedData.data.status;
+            allWs.map((ws) =>
+              ws.send(
+                JSON.stringify({
+                  event: "ATTENDANCE_MARKED",
+                  data: {
+                    studentId: parsedData.data.studentId,
+                    status: parsedData.data.status,
+                  },
+                })
+              )
+            );
+          } else {
+            ws.send(
+              JSON.stringify({
+                event: "ERROR",
+                data: {
+                  message: "Forbidden, teacher event only",
+                },
+              })
+            );
+          }
+          break;
+        case "TODAY_SUMMARY":
+          if (ws.user.role === "teacher") {
+            const classDb = await ClassModel.findById(activeSession?.classId);
+            const total = classDb?.studentIds.length ?? 0;
+            const present = Object.keys(activeSession?.attendance || []).filter(
+              (x) => activeSession?.attendance[x] === "present"
+            ).length;
+            const absent = total - present;
+            allWs.map((ws) =>
+              ws.send(
+                JSON.stringify({
+                event: "TODAY_SUMMARY",
+                data: {
+                  present: present,
+                  absent: absent,
+                  total: total,
+                },
+              })
+              )
+            );
+          } else {
+            ws.send(
+              JSON.stringify({
+                event: "ERROR",
+                data: {
+                  message: "Forbidden, teacher event only",
+                },
+              })
+            );
+          }
+          break;
+        case "MY_ATTENDANCE":
+          if (ws.user.role === "student") {
+            const status = activeSession?.attendance[ws.user.userId];
+            if (status) {
+              ws.send(
+                JSON.stringify({
+                  event: "MY_ATTENDANCE",
+                  data: {
+                    status: status,
+                  },
+                })
+              );
+              return;
+            }
+            ws.send(
+              JSON.stringify({
+                event: "MY_ATTENDANCE",
+                data: {
+                  status: "not yet updated",
+                },
+              })
+            );
+          } else {
+            ws.send(
+              JSON.stringify({
+                event: "ERROR",
+                data: {
+                  message: "Forbidden, student event only",
+                },
+              })
+            );
+          }
+          break;
+        case "DONE":
+          if (ws.user.role === "teacher") {
+            const classDb = await ClassModel.findById(activeSession?.classId);
+            const total = classDb?.studentIds.length ?? 0;
+            const present = Object.keys(activeSession?.attendance || []).filter(
+              (x) => activeSession?.attendance[x] === "present"
+            ).length;
+            const absent = total - present;
+            const promises =
+              classDb?.studentIds.map(async (studentId) => {
+                await AttendanceModel.create({
+                  studentId,
+                  status:
+                    activeSession?.attendance[studentId.toString()] ===
+                    "present"
+                      ? "present"
+                      : "absent",
+                });
+              }) || [];
+            await Promise.all(promises);
+            activeSession = null;
+            allWs.map((ws) =>
+              ws.send(
+                JSON.stringify({
+                  event: "DONE",
+                  data: {
+                    message: "Attendance persisted",
+                    present: present,
+                    absent: absent,
+                    total: total,
+                  },
+                })
+              )
+            );
+          } else {
+            ws.send(
+              JSON.stringify({
+                event: "ERROR",
+                data: {
+                  message: "Forbidden, teacher event only",
+                },
+              })
+            );
+          }
+          break;
+        default:
+          ws.send("Invalid Operation");
+      }
+      console.log(msg);
+    });
+    console.log("socket", req.headers["authorization"]);
+  } catch (error) {
+    ws.send(
+      JSON.stringify({
+        event: "ERROR",
+        data: {
+          message: "Unauthorized or invalid token",
+        },
+      })
+    );
+    ws.close();
+  }
+});
 app.post("/auth/signup", async (req, res) => {
   const { success, data } = SignUpSchema.safeParse(req.body);
   if (!success) {
@@ -160,7 +353,7 @@ app.post(
   async (req, res) => {
     const { success, data } = AddStudentSchema.safeParse(req.body);
     if (!success) {
-      res.json({
+      res.status(400).json({
         success: false,
         error: "Invalid request schema",
       });

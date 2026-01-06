@@ -20,11 +20,11 @@ pnpm-debug.log*
 # Env files
 .env
 .env.*
-
+dist
 # Coverage
 coverage/
 .nyc_output/
-
+mid-test
 # Caches
 .cache/
 .eslintcache
